@@ -1,0 +1,24 @@
+{
+  "name": "@kabza/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "hammer": "tsx scripts/hammer.ts"
+  },
+  "dependencies": {
+    "@kabza/shared": "*",
+    "better-sqlite3": "^11.10.0",
+    "tsx": "^4.23.13",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.19.0",
+    "@types/ws": "^8.18.1",
+    "vitest": "^4.1.11"
+  }
+}
