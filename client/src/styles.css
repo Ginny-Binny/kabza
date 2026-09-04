@@ -21,6 +21,34 @@ body {
   cursor: pointer;
 }
 
+.board.dim {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.cell.pending {
+  opacity: 0.7;
+}
+
+.cell.pop {
+  animation: pop 120ms ease-out;
+}
+
+.cell.shake {
+  animation: shake 200ms ease-in-out;
+}
+
+@keyframes pop {
+  from { transform: scale(0.7); }
+  60% { transform: scale(1.08); }
+  to { transform: scale(1); }
+}
+
+@keyframes shake {
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
 .toast {
   position: fixed;
   top: 12px;
