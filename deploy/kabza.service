@@ -1,0 +1,19 @@
+# /etc/systemd/system/kabza.service
+[Unit]
+Description=kabza realtime grid
+After=network.target
+
+[Service]
+User=kabza
+WorkingDirectory=/opt/kabza
+ExecStart=/usr/bin/npm run start
+Environment=PORT=8090
+Environment=DB_PATH=/var/lib/kabza/kabza.db
+# set the real token in the override, not here:
+#   systemctl edit kabza  ->  [Service] Environment=ADMIN_TOKEN=...
+Environment=ADMIN_TOKEN=change-me
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
