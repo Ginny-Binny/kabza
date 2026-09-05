@@ -42,6 +42,9 @@ export function createBroadcast(grid: Grid) {
       if (!timer) timer = setTimeout(flush, BATCH_MS);
     },
     flushNow: flush,
+    clearQueue() {
+      queue = [];
+    },
     sendAll,
     get online() { return byUser.size; },
   };
