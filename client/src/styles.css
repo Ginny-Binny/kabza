@@ -19,7 +19,7 @@ body {
 }
 
 .app {
-  max-width: 1140px;
+  max-width: min(1560px, 96vw);
   margin: 0 auto;
   padding: 10px 16px 24px;
 }
@@ -131,6 +131,65 @@ body {
   color: var(--faint);
 }
 
+.territory-wrap {
+  position: relative;
+}
+
+.ttip {
+  position: absolute;
+  top: 16px;
+  transform: translateX(-50%) rotate(-0.5deg);
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 2px 2px 0 rgba(74, 74, 69, 0.12);
+  z-index: 10;
+}
+
+.territory {
+  display: flex;
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--paper);
+  margin: 0 1px 10px;
+  transform: rotate(-0.15deg);
+}
+
+.tseg {
+  transition: width 300ms ease;
+  border-right: 1px solid rgba(74, 74, 69, 0.35);
+}
+
+.tseg.others {
+  background: #d8d6d0;
+}
+
+.tseg.rest {
+  flex: 1;
+  border-right: none;
+}
+
+.cnum {
+  display: inline-block;
+  font-weight: normal;
+  margin-left: 4px;
+  animation: pop 200ms ease-out;
+}
+
+.rank {
+  color: var(--faint);
+}
+
+.boardwrap {
+  overflow-x: auto;
+}
+
 .board {
   display: block;
   width: 100%;
@@ -138,6 +197,56 @@ body {
   user-select: none;
   cursor: pointer;
   transition: opacity 200ms;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.board.cooling {
+  cursor: not-allowed;
+}
+
+.float1 {
+  font-family: var(--hand);
+  font-size: 14px;
+  fill: var(--ink);
+  text-anchor: middle;
+  pointer-events: none;
+  animation: rise 700ms ease-out forwards;
+}
+
+@keyframes rise {
+  from { opacity: 0.95; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-16px); }
+}
+
+.coolring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-dasharray: 57;
+  stroke-dashoffset: 0;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: rotate(-90deg);
+  animation: drain linear forwards;
+}
+
+@keyframes drain {
+  to { stroke-dashoffset: 57; opacity: 0; }
+}
+
+.tip {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-0.5deg);
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 15px;
+  z-index: 10;
 }
 
 .board.dim {
@@ -249,4 +358,46 @@ body {
 .countdown {
   color: var(--faint);
   margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .app {
+    padding: 8px 10px 16px;
+  }
+
+  .logo {
+    font-size: 24px;
+  }
+
+  .topbar {
+    gap: 10px;
+    padding-bottom: 6px;
+  }
+
+  .leaderboard {
+    margin-left: 0;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    padding-bottom: 2px;
+  }
+
+  .leaderboard li {
+    flex: none;
+  }
+
+  /* 40 cells can't fit a phone at tap size — keep them tappable, pan sideways */
+  .board {
+    min-width: 820px;
+  }
+
+  .hint {
+    font-size: 14px;
+  }
+
+  .overlay-card {
+    max-width: 88vw;
+    padding: 14px 20px 16px;
+  }
 }
