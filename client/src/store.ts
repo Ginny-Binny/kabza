@@ -2,7 +2,7 @@ import { CELLS } from "@kabza/shared";
 import type { Cell, S2C, User } from "@kabza/shared";
 
 export type Status = "connecting" | "online" | "reconnecting";
-export type Fx = { kind: "pop" | "shake"; n: number };
+export type Fx = { kind: "pop" | "shake" | "cool"; n: number; ms?: number };
 export type Overlay = { winner: User | null; standings: User[]; endsAt: number };
 
 type State = {
@@ -16,11 +16,16 @@ type State = {
   leaderboard: User[];
   cooldownUntil: number;
   overlay: Overlay | null;
+  tip: string | null;
+  floats: { cellId: number; n: number }[];
   pending: Map<number, number>; // cellId -> clientSeq, painted optimistically as mine
   fx: Map<number, Fx>;
 };
 
 const emptyCells = () => Array.from({ length: CELLS }, (): Cell => ({ owner: null, color: null, version: 0 }));
+
+// version of each user's latest claim — mirrors the server's leaderboard tie-break
+export const lastClaimV = new Map<string, number>();
 
 let state: State = {
   cells: emptyCells(),
@@ -33,6 +38,8 @@ let state: State = {
   leaderboard: [],
   cooldownUntil: 0,
   overlay: null,
+  tip: null,
+  floats: [],
   pending: new Map(),
   fx: new Map(),
 };
@@ -53,6 +60,12 @@ export function subscribe(fn: () => void) {
 function set(patch: Partial<State>) {
   state = { ...state, ...patch };
   for (const fn of subs) fn();
+}
+
+function addFloat(cellId: number) {
+  const n = ++fxN;
+  set({ floats: [...state.floats, { cellId, n }] });
+  setTimeout(() => set({ floats: state.floats.filter((f) => f.n !== n) }), 800);
 }
 
 export function optimistic(cellId: number, seq: number) {
@@ -89,6 +102,7 @@ export function handle(msg: S2C) {
       const cur = cells[d.cellId];
       if (cur && d.version > cur.version) {
         cells[d.cellId] = { owner: d.owner, color: d.color, version: d.version };
+        lastClaimV.set(d.owner, d.version);
         const u = users.get(d.owner);
         if (u) users.set(d.owner, { ...u, cellCount: u.cellCount + 1 });
         else users.set(d.owner, { id: d.owner, name: "…", color: d.color, cellCount: 1 });
@@ -113,23 +127,45 @@ export function handle(msg: S2C) {
     seqs.delete(msg.clientSeq);
     const cells = state.cells.slice();
     const cur = cells[msg.cellId];
-    if (cur && msg.version > cur.version) {
-      cells[msg.cellId] = { owner: state.me.id, color: state.me.color, version: msg.version };
-    }
     // note: global version only advances via the delta stream, so a lost
     // batch is still detectable as a gap after this ack
     const pending = new Map(state.pending);
     pending.delete(msg.cellId);
-    set({ cells, pending });
+    if (cur && msg.version > cur.version) {
+      cells[msg.cellId] = { owner: state.me.id, color: state.me.color, version: msg.version };
+      lastClaimV.set(state.me.id, msg.version);
+      // count it here too — the later broadcast delta is version-skipped
+      const users = new Map(state.users);
+      const u = users.get(state.me.id) ?? state.me;
+      const me = { ...u, cellCount: u.cellCount + 1 };
+      users.set(me.id, me);
+      set({ cells, pending, users, me });
+      addFloat(msg.cellId);
+    } else {
+      set({ cells, pending });
+    }
   } else if (msg.type === "nack") {
     const info = seqs.get(msg.clientSeq);
     if (!info) return;
     seqs.delete(msg.clientSeq);
     const pending = new Map(state.pending);
     pending.delete(msg.cellId);
-    const fx = new Map(state.fx).set(msg.cellId, { kind: "shake", n: ++fxN });
+    const fx = new Map(state.fx);
     const patch: Partial<State> = { pending, fx };
-    if (msg.reason === "cooldown" && msg.retryAfterMs) patch.cooldownUntil = Date.now() + msg.retryAfterMs;
+    if (msg.reason === "cooldown" && msg.retryAfterMs) {
+      fx.set(msg.cellId, { kind: "cool", n: ++fxN, ms: msg.retryAfterMs });
+      patch.cooldownUntil = Date.now() + msg.retryAfterMs;
+      setTimeout(() => set({}), msg.retryAfterMs + 40); // re-render so the cursor resets
+      try {
+        if (!localStorage.getItem("kabza:tip-cooldown")) {
+          localStorage.setItem("kabza:tip-cooldown", "1");
+          patch.tip = "easy — 1 claim per second";
+          setTimeout(() => set({ tip: null }), 3500);
+        }
+      } catch {}
+    } else {
+      fx.set(msg.cellId, { kind: "shake", n: ++fxN });
+    }
     set(patch);
   } else if (msg.type === "presence") {
     set({ online: msg.online, leaderboard: msg.leaderboard });
@@ -144,12 +180,14 @@ export function handle(msg: S2C) {
   } else if (msg.type === "roundStart") {
     const users = new Map([...state.users].map(([id, u]) => [id, { ...u, cellCount: 0 }]));
     const me = state.me ? users.get(state.me.id) ?? state.me : null;
+    lastClaimV.clear();
     set({
       cells: emptyCells(),
       round: msg.round,
       version: msg.globalVersion,
       overlay: null,
       leaderboard: [],
+      floats: [],
       users,
       me,
     });

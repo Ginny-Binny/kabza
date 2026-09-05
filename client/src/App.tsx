@@ -13,6 +13,7 @@ export function App() {
       {s.status !== "online" && <div className="toast">{s.status}…</div>}
       <Board />
       <p className={"hint" + (showHint ? "" : " gone")}>click any square to claim it</p>
+      {s.tip && <div className="tip">{s.tip}</div>}
       {s.overlay && <RoundOverlay overlay={s.overlay} />}
     </div>
   );
