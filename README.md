@@ -1,188 +1,99 @@
 # kabza
 
-A shared 40×25 grid of 1,000 hand-drawn cells. Open the page, click a square,
-it's yours — and everyone else sees it within ~100ms. When the board fills up
-the round ends, a winner is crowned, and a fresh board appears.
+A shared board of 1000 hand drawn cells. Open the site, click a square and it's yours. Everyone else sees it in under 100ms. When the board fills up, a winner is shown, the board freezes for 10 seconds and a fresh round starts on its own.
 
 ![the board mid-round](docs/board.png)
 
-No signup, no landing page: the live board is the landing page. You get a
-color and a placeholder name on arrival and can rename yourself inline after
-you've already started playing.
+No signup. You get a color and a name like player-7 the moment you open it, and you can rename yourself from the top bar while playing.
 
-## running it
+## run it
 
-Node 20+.
+Needs node 20+.
 
 ```sh
 npm install
-npm run dev        # server :8090 + vite :5173, open http://localhost:5173
+npm run dev        # server on :8090, app on http://localhost:5173
 ```
 
-Production is a single process serving the built client and the websocket:
+For prod it's one process that serves everything:
 
 ```sh
 npm run build
-npm start          # everything on :8090
+npm start          # all on :8090
 ```
 
-Other commands:
+Also there:
 
 ```sh
-npm test           # server unit tests (vitest)
-npm run hammer     # load test: 40 users spam over the rate limit, then
-                   # verifies acks == snapshot == memory == sqlite
+npm test           # unit tests
+npm run hammer     # 40 fake users spam claims, then it checks all counts still match
 ```
 
-Config is plain env vars: `PORT` (8090), `DB_PATH` (./data/kabza.db),
-`ADMIN_TOKEN` (defaults to "dev-token" with a warning). VPS setup with
-nginx + systemd lives in [deploy/](deploy/DEPLOY.md).
+Config is just env vars: `PORT`, `DB_PATH`, `ADMIN_TOKEN`. VPS setup lives in [deploy/DEPLOY.md](deploy/DEPLOY.md).
 
-## protocol
+## how it talks
 
-Raw WebSocket with JSON messages, one socket per tab. I went with raw `ws`
-instead of socket.io because the protocol is small enough to own, and owning
-it is most of the fun of this project. Shared types live in
-[shared/src/protocol.ts](shared/src/protocol.ts).
+One websocket per tab, plain JSON. I used raw `ws` instead of socket.io because writing the protocol myself was the point of this project. All message types are in [shared/src/protocol.ts](shared/src/protocol.ts).
 
-Client → server:
+Client sends:
 
-| message | fields | meaning |
-|---|---|---|
-| `hello` | `userId`, `name?`, `sinceVersion?`, `round?` | join or rejoin; carries resync info so one message covers both |
-| `claim` | `cellId`, `clientSeq` | try to take a cell |
-| `resync` | `sinceVersion`, `round` | live-socket gap repair when a delta batch went missing |
-| `setName` | `name` | inline rename (trimmed, control chars stripped, 24 chars max) |
+- `hello` - join or rejoin, also tells the server the last update I saw
+- `claim` - try to take a cell
+- `resync` - ask for missed updates if I notice a gap
+- `setName` - rename
 
-Server → client:
+Server sends:
 
-| message | fields | meaning |
-|---|---|---|
-| `snapshot` | `round`, `phase`, `freezeEndsAt`, `globalVersion`, `cells`, `users`, `you` | full board state on join or when a replay would be too big |
-| `deltas` | `round`, `deltas[]` | accepted claims, batched every 50ms into one frame |
-| `ack` | `clientSeq`, `cellId`, `version` | your claim landed |
-| `nack` | `clientSeq`, `cellId`, `reason`, `retryAfterMs?` | your claim didn't: `taken`, `cooldown`, `frozen` or `invalid` |
-| `presence` | `online`, `round`, `leaderboard` | every 5s, plus once immediately on join |
-| `userUpdate` | `id`, `name` | someone renamed |
-| `roundOver` | `round`, `winner`, `standings`, `freezeMs` | board is full, frozen for 10s |
-| `roundStart` | `round`, `globalVersion` | fresh board |
+- `snapshot` - the whole board
+- `deltas` - accepted claims, grouped every 50ms into one message
+- `ack` / `nack` - your claim worked, or why it didn't (taken, cooldown, frozen, invalid)
+- `presence` - online count and leaderboard, every 5s and once right when you join
+- `userUpdate`, `roundOver`, `roundStart`
 
-Identity is a UUID in localStorage — no auth, by design. Two tabs in the same
-browser are the same player twice; both get deltas and their claims serialize
-like anyone else's.
+## two people click the same cell
 
-## concurrency
+The server is the only authority and node runs message handlers one at a time. So two clicks on the same cell just arrive in some order. First one wins, second one gets `nack taken`. No locks anywhere, the event loop is the lock.
 
-The server is the single authority and Node's single-threaded event loop is
-the lock. Two users clicking the same cell "at once" arrive as two ordered
-messages; the first mutates the cell, the second sees `owner !== null` and
-gets `nack("taken")`. There is no mutex because there is nothing to guard —
-the claim handler runs to completion (including the synchronous sqlite
-append) before the next message is processed. Knowing *why* no lock is needed
-is the design here, not an accident.
+Every accepted claim gets a version number that only goes up. The client only applies an update if its version is newer than what it already has, so acks, broadcasts and replays can arrive in any order and nothing breaks.
 
-Every accepted claim gets a monotonically increasing `version`. Clients apply
-a delta only if `delta.version > cell.version`, which makes application
-idempotent — acks, broadcast deltas and replays can arrive in any mix and
-order without corrupting the board.
+Claiming a cell you already own just gets an ok again. That makes retries after a reconnect completely safe.
 
-Retries are safe without any server-side bookkeeping because claiming a cell
-you already own just re-acks with the existing version (no new log entry, no
-broadcast). After a reconnect the client re-sends whatever was in flight,
-once, with the original `clientSeq`.
+## why it feels instant
 
-## feels instant
+Your click paints the cell right away, before the server even answers. If the server says no, the cell shakes and goes back. The ack carries the version number so the cell can settle immediately instead of flashing while waiting for the broadcast.
 
-Clicks paint immediately in your color (slightly translucent) before the
-server answers — that's the whole trick. The ack confirms it, a nack rolls it
-back with a shake. The ack carries the cell's `version` (a small deviation
-from the minimal protocol) so the optimistic paint can be promoted in place;
-without it the cell would flash back to unclaimed for up to 50ms until the
-batched delta arrived.
+## storage
 
-## persistence and recovery
+The board lives in memory. Every claim is also written to sqlite inside the same handler, so the log can never be behind what players saw. On restart the server replays the current round from the log and the board comes back exactly as it was.
 
-State lives in memory; durability is an append-only claim log in sqlite
-(better-sqlite3, WAL). The write happens synchronously inside the claim
-handler, so the log can never be behind what clients were told. On boot the
-server replays the current round's claims (≤1000 rows, instant) to rebuild
-the board, the per-user counts and the resync history.
+On reconnect the client says the last version it saw. Small gap: server sends just what was missed. Big gap, new round, or a wiped db: full snapshot.
 
-Reconnects send `hello {sinceVersion, round}`. Same round and a gap ≤250 →
-one `deltas` frame replaying what was missed; anything else (new client,
-round boundary, big gap, or a client somehow *ahead* of the server, which
-means the db was wiped) → full snapshot, which wholesale-replaces client
-state. The client also watches the live stream for version gaps and resyncs
-itself if a batch ever goes missing.
+Sqlite runs in WAL mode with synchronous NORMAL, which means a power cut could lose the last second of claims. An app crash loses nothing. Fine trade for a game.
 
-`journal_mode=WAL` with `synchronous=NORMAL` means a power cut could lose the
-last few claims. An app crash loses nothing. That trade felt right for a
-game; flip to `FULL` if you disagree.
+## rounds instead of a reset button
 
-## rounds, not resets
+A public reset button on a shared board is just griefing, so there isn't one. Board fills up, everyone sees the standings, 10 second freeze, new round. There is a private `POST /admin/reset` behind a token for demos and accidents.
 
-A public reset button on a shared board is a griefing feature, so there isn't
-one. When cell 1000 is claimed the server flushes the final delta, broadcasts
-`roundOver` with the standings, freezes the board for 10s (claims nack with
-`frozen`), then broadcasts `roundStart` and everyone's board clears. Rounds
-and versions only ever go up; old rounds stay in the log.
+## rate limit
 
-For demos and accidents there's a private `POST /admin/reset` guarded by
-`ADMIN_TOKEN` — it just starts the next round early.
+1 claim per second with a burst of 3, per user (GCRA, about 25 lines). Too fast gets a nack with the wait time and the UI shows a small ring. I've shipped this same algorithm in a webhook delivery pipeline before, it's my favorite tiny limiter.
 
-## rate limiting
-
-GCRA per user: 1 claim/sec sustained with a burst of 3, ~25 lines, in
-memory. Over the limit you get `nack("cooldown", retryAfterMs)` and the UI
-shows a draining ring on your color chip. I've shipped the same algorithm in
-a webhook delivery pipeline before — it's my favorite "tiny but correct"
-limiter. Denials don't consume budget, so spamming while limited doesn't dig
-the hole deeper.
-
-The hammer script is the proof: 40 virtual users at 4 claims/sec each
-(4× over the limit) until ~800 cells land. On my machine: ack p50 ~1ms,
-claim-to-other-clients-see-it p50 ~61ms / p95 ~64ms, and at the end the four
-counts — acks received, snapshot cells, in-memory count, sqlite rows — all
-agree exactly.
+The hammer script is the proof: 40 users clicking 4x over the limit. On my machine acks come back in about 1ms, other clients see a claim in about 60ms, and at the end the acks, the snapshot, memory and sqlite all agree exactly.
 
 ## the look
 
-Cells are rough.js rectangles on one big SVG — 1.5px sketchy ink strokes,
-hachure fills in the owner's color, Excalifont for the text (OFL, bundled in
-[client/public/fonts/](client/public/fonts/)). Every cell's paths are
-generated once with a fixed per-cell seed and cached, so redraws never
-jitter and a delta only touches its own `<g>` (cells are memoized React
-components; the board is one delegated click handler, not 1000).
+rough.js rectangles on one big svg, each cell drawn with a fixed seed so it never wiggles between redraws. Excalifont for the text (open license, bundled in the repo). Colors are 12 fixed pastels picked by hashing the user id, never random.
 
-Colors come from a curated 12-pastel palette, picked by hashing the userId —
-never random RGB.
+## choices i made
 
-## trade-offs I chose
+- tsx runs the server in prod, no build step. It's an io bound app, fine.
+- better-sqlite3 pinned to v11, since v12 has no prebuilt binary for node 20 on windows.
+- no snapshot table in the db, replaying one round is at most 1000 rows.
 
-- **tsx in prod, no build step for the server.** One less emit pipeline in a
-  monorepo; the server is I/O-bound, not CPU-bound. I'd add a `tsc` build if
-  this grew.
-- **better-sqlite3 pinned to v11** — v12+ ships no prebuilt binary for Node
-  20 on Windows, and a native toolchain requirement is a bad first-run
-  experience for a take-home.
-- **No snapshot table.** Replaying one round is ≤1000 rows; a snapshot table
-  is machinery without a payoff at this size.
-- **Verbose snapshot wire format** (~50KB for a full board). Fine at this
-  scale; packing owners into an index table is listed below, unbuilt.
+## if this had to scale
 
-## scaling past one box (design note, deliberately not built)
+Move cell ownership to redis (SET NX per cell), take versions from INCR, fan updates out over pub/sub and keep the websocket servers stateless. At 100k cells you'd also only send a client updates for the part of the board they can actually see. None of that is built on purpose, 1000 cells doesn't need it.
 
-The current design leans on one process for ordering. To go horizontal:
-move cell ownership to Redis (`SET cell:{id} {user} NX` — or a Lua script to
-claim and log atomically), take versions from a Redis `INCR`, fan deltas out
-over pub/sub, and keep the WS servers stateless so any client can hit any
-node. For 100k cells / 10k users you'd add viewport interest management
-(only send deltas for the region a client can see), binary delta encoding,
-and region sharding. None of that pays for itself at 1,000 cells, which is
-why it's a paragraph and not code.
+## not done
 
-## future work
-
-Auth, teams/area-control rules, chat, mobile-perfect layout, canvas
-rendering with zoom/pan, spectator/replay mode (the claim log already holds
-everything a replay needs), pruning old rounds from the log.
+Auth, teams, chat, zoom and pan, replay mode (the claim log already holds everything a replay would need).
