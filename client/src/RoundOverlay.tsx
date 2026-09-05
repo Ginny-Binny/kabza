@@ -12,21 +12,21 @@ export function RoundOverlay({ overlay }: { overlay: Overlay }) {
   return (
     <div className="overlay">
       <div className="overlay-card">
-        <h2>round over</h2>
+        <h2>board full!</h2>
         {overlay.winner && (
-          <p>
-            <span className="chip" style={{ background: overlay.winner.color }} /> {overlay.winner.name} wins with{" "}
-            {overlay.winner.cellCount} cells
+          <p className="winner">
+            <span className="chip" style={{ background: overlay.winner.color }} /> {overlay.winner.name} takes the
+            round with {overlay.winner.cellCount} cells
           </p>
         )}
         <ol>
           {overlay.standings.slice(0, 5).map((u) => (
             <li key={u.id}>
-              {u.name} — {u.cellCount}
+              <span className="chip small" style={{ background: u.color }} /> {u.name} <b>{u.cellCount}</b>
             </li>
           ))}
         </ol>
-        <p>next round in {left}s</p>
+        <p className="countdown">fresh board in {left}s</p>
       </div>
     </div>
   );
