@@ -1,10 +1,13 @@
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import type { Server } from "node:http";
-import { RESYNC_MAX_GAP, WS_PATH } from "@kabza/shared";
+import { NAME_MAX, RESYNC_MAX_GAP, WS_PATH } from "@kabza/shared";
 import type { C2S, S2C, User } from "@kabza/shared";
 import type { Grid } from "./game/grid";
+import type { Limiter } from "./game/gcra";
+import type { Rounds } from "./game/rounds";
 import type { Broadcast } from "./broadcast";
+import type { Db } from "./db";
 
 export function chooseSync(
   clientRound: number | undefined,
@@ -17,7 +20,17 @@ export function chooseSync(
   return "deltas";
 }
 
-export function attachWs(server: Server, grid: Grid, bcast: Broadcast) {
+export function cleanName(raw: unknown): string {
+  return String(raw ?? "")
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, NAME_MAX);
+}
+
+type Deps = { grid: Grid; bcast: Broadcast; db: Db; limiter: Limiter; rounds: Rounds };
+
+export function attachWs(server: Server, { grid, bcast, db, limiter, rounds }: Deps) {
   const wss = new WebSocketServer({ server, path: WS_PATH });
   const alive = new WeakMap<WebSocket, boolean>();
 
@@ -69,10 +82,11 @@ export function attachWs(server: Server, grid: Grid, bcast: Broadcast) {
 
       if (msg.type === "hello") {
         userId = String(msg.userId);
-        const you = grid.ensureUser(userId, msg.name);
+        const { user, created } = grid.ensureUser(userId, cleanName(msg.name) || undefined);
+        if (created) db.upsertUser(user);
         // sync reply must go out before the socket joins the broadcaster,
         // so replayed deltas can't interleave with live batches
-        sync(you, msg.sinceVersion, msg.round);
+        sync(user, msg.sinceVersion, msg.round);
         bcast.add(ws, userId);
         return;
       }
@@ -82,18 +96,37 @@ export function attachWs(server: Server, grid: Grid, bcast: Broadcast) {
       if (!user) return;
 
       if (msg.type === "claim") {
+        const nack = (reason: "taken" | "cooldown" | "frozen" | "invalid", retryAfterMs?: number) =>
+          send({ type: "nack", clientSeq: msg.clientSeq, cellId: msg.cellId, reason, retryAfterMs });
+
+        if (grid.phase === "frozen") return nack("frozen");
+        const lim = limiter.check(userId);
+        if (!lim.ok) return nack("cooldown", lim.retryAfterMs);
         const res = grid.claim(msg.cellId, userId);
-        if (!res.ok) {
-          send({ type: "nack", clientSeq: msg.clientSeq, cellId: msg.cellId, reason: res.reason });
-          return;
+        if (!res.ok) return nack(res.reason);
+        if (!res.already) {
+          // synchronous write: the log can never be behind what clients saw
+          db.appendClaim(res.delta, grid.round, Date.now());
         }
         send({ type: "ack", clientSeq: msg.clientSeq, cellId: msg.cellId, version: res.delta.version });
-        if (!res.already) bcast.delta(res.delta);
+        if (!res.already) {
+          bcast.delta(res.delta);
+          if (res.boardFull) rounds.enterFrozen();
+        }
         return;
       }
 
       if (msg.type === "resync") {
         sync(user, msg.sinceVersion, msg.round);
+        return;
+      }
+
+      if (msg.type === "setName") {
+        const name = cleanName(msg.name);
+        if (!name) return;
+        user.name = name;
+        db.upsertUser(user);
+        bcast.sendAll({ type: "userUpdate", id: user.id, name });
       }
     });
 
