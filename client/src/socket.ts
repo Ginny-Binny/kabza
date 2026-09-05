@@ -58,10 +58,15 @@ function send(msg: C2S) {
 
 export function claim(cellId: number) {
   const s = getState();
-  if (s.status !== "online" || !s.me) return;
+  if (s.status !== "online" || !s.me || s.overlay) return;
+  if (Date.now() < s.cooldownUntil) return;
   const cell = s.cells[cellId];
   if (!cell || cell.owner || s.pending.has(cellId)) return;
   const n = seq++;
   optimistic(cellId, n);
   send({ type: "claim", cellId, clientSeq: n });
+}
+
+export function rename(name: string) {
+  if (name.trim()) send({ type: "setName", name: name.trim() });
 }

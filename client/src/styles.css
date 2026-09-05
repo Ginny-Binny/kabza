@@ -21,6 +21,48 @@ body {
   cursor: pointer;
 }
 
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bar h1 {
+  margin: 0 8px 8px 0;
+}
+
+.chip {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid #999;
+  vertical-align: baseline;
+}
+
+.lb {
+  color: #777;
+  font-size: 13px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(250, 249, 246, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-card {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 16px 32px;
+  text-align: center;
+}
+
 .board.dim {
   opacity: 0.5;
   pointer-events: none;

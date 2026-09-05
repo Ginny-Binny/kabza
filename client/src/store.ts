@@ -3,6 +3,7 @@ import type { Cell, S2C, User } from "@kabza/shared";
 
 export type Status = "connecting" | "online" | "reconnecting";
 export type Fx = { kind: "pop" | "shake"; n: number };
+export type Overlay = { winner: User | null; standings: User[]; endsAt: number };
 
 type State = {
   cells: Cell[];
@@ -11,6 +12,10 @@ type State = {
   round: number;
   version: number;
   status: Status;
+  online: number;
+  leaderboard: User[];
+  cooldownUntil: number;
+  overlay: Overlay | null;
   pending: Map<number, number>; // cellId -> clientSeq, painted optimistically as mine
   fx: Map<number, Fx>;
 };
@@ -24,6 +29,10 @@ let state: State = {
   round: 1,
   version: 0,
   status: "connecting",
+  online: 0,
+  leaderboard: [],
+  cooldownUntil: 0,
+  overlay: null,
   pending: new Map(),
   fx: new Map(),
 };
@@ -55,13 +64,19 @@ export function optimistic(cellId: number, seq: number) {
 
 export function handle(msg: S2C) {
   if (msg.type === "snapshot") {
+    const users = new Map(msg.users.map((u) => [u.id, u]));
+    const standings = [...users.values()].filter((u) => u.cellCount > 0).sort((a, b) => b.cellCount - a.cellCount);
     set({
       cells: msg.cells,
-      users: new Map(msg.users.map((u) => [u.id, u])),
+      users,
       me: msg.you,
       round: msg.round,
       version: msg.globalVersion,
       status: "online",
+      overlay:
+        msg.phase === "frozen" && msg.freezeEndsAt
+          ? { winner: standings[0] ?? null, standings, endsAt: msg.freezeEndsAt }
+          : null,
     });
   } else if (msg.type === "deltas") {
     if (msg.round !== state.round) return;
@@ -69,9 +84,15 @@ export function handle(msg: S2C) {
     let version = state.version;
     let pending = state.pending;
     let fx = state.fx;
+    const users = new Map(state.users);
     for (const d of msg.deltas) {
       const cur = cells[d.cellId];
-      if (cur && d.version > cur.version) cells[d.cellId] = { owner: d.owner, color: d.color, version: d.version };
+      if (cur && d.version > cur.version) {
+        cells[d.cellId] = { owner: d.owner, color: d.color, version: d.version };
+        const u = users.get(d.owner);
+        if (u) users.set(d.owner, { ...u, cellCount: u.cellCount + 1 });
+        else users.set(d.owner, { id: d.owner, name: "…", color: d.color, cellCount: 1 });
+      }
       if (d.version > version) version = d.version;
       const seq = state.pending.get(d.cellId);
       if (seq != null) {
@@ -84,7 +105,8 @@ export function handle(msg: S2C) {
         if (d.owner !== state.me?.id) fx.set(d.cellId, { kind: "shake", n: ++fxN });
       }
     }
-    set({ cells, version, pending, fx });
+    const me = state.me ? users.get(state.me.id) ?? state.me : null;
+    set({ cells, version, pending, fx, users, me });
   } else if (msg.type === "ack") {
     const info = seqs.get(msg.clientSeq);
     if (!info || !state.me) return;
@@ -106,7 +128,31 @@ export function handle(msg: S2C) {
     const pending = new Map(state.pending);
     pending.delete(msg.cellId);
     const fx = new Map(state.fx).set(msg.cellId, { kind: "shake", n: ++fxN });
-    set({ pending, fx });
+    const patch: Partial<State> = { pending, fx };
+    if (msg.reason === "cooldown" && msg.retryAfterMs) patch.cooldownUntil = Date.now() + msg.retryAfterMs;
+    set(patch);
+  } else if (msg.type === "presence") {
+    set({ online: msg.online, leaderboard: msg.leaderboard });
+  } else if (msg.type === "userUpdate") {
+    const users = new Map(state.users);
+    const u = users.get(msg.id);
+    if (u) users.set(msg.id, { ...u, name: msg.name });
+    const me = state.me?.id === msg.id ? { ...state.me, name: msg.name } : state.me;
+    set({ users, me });
+  } else if (msg.type === "roundOver") {
+    set({ overlay: { winner: msg.winner, standings: msg.standings, endsAt: Date.now() + msg.freezeMs } });
+  } else if (msg.type === "roundStart") {
+    const users = new Map([...state.users].map(([id, u]) => [id, { ...u, cellCount: 0 }]));
+    const me = state.me ? users.get(state.me.id) ?? state.me : null;
+    set({
+      cells: emptyCells(),
+      round: msg.round,
+      version: msg.globalVersion,
+      overlay: null,
+      leaderboard: [],
+      users,
+      me,
+    });
   }
 }
 
