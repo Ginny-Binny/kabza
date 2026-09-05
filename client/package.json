@@ -10,7 +10,8 @@
   "dependencies": {
     "@kabza/shared": "*",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "roughjs": "^4.6.6"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
