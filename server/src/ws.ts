@@ -88,6 +88,8 @@ export function attachWs(server: Server, { grid, bcast, db, limiter, rounds }: D
         // so replayed deltas can't interleave with live batches
         sync(user, msg.sinceVersion, msg.round);
         bcast.add(ws, userId);
+        // don't make a fresh tab wait 5s to see who's here
+        send({ type: "presence", online: bcast.online, round: grid.round, leaderboard: grid.standings().slice(0, 5) });
         return;
       }
 
