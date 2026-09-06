@@ -1,10 +1,16 @@
 # kabza
 
+**Play it: [kabza.psyduck.in](https://kabza.psyduck.in)** (works on phone too)
+
 A shared board of 1000 hand drawn cells. Open the site, click a square and it's yours. Everyone else sees it in under 100ms. When the board fills up, a winner is shown, the board freezes for 10 seconds and a fresh round starts on its own.
 
-![the board mid-round](docs/board.png)
+![the live board, mid-round](docs/board.png)
 
-No signup. You get a color and a name like player-7 the moment you open it, and you can rename yourself from the top bar while playing.
+No signup. You get a color and a name like player-7 the moment you open it. First-timers get a small welcome card (the live board keeps playing behind it), and you can rename yourself from the top bar any time.
+
+## how it works
+
+![how it works](docs/diagram.png)
 
 ## run it
 
@@ -31,7 +37,7 @@ npm run hammer     # 40 fake users spam claims, then it checks all counts still 
 
 Config is just env vars: `PORT`, `DB_PATH`, `ADMIN_TOKEN`. VPS setup lives in [deploy/DEPLOY.md](deploy/DEPLOY.md).
 
-## how it talks
+## the protocol
 
 One websocket per tab, plain JSON. I used raw `ws` instead of socket.io because writing the protocol myself was the point of this project. All message types are in [shared/src/protocol.ts](shared/src/protocol.ts).
 
@@ -60,7 +66,7 @@ Claiming a cell you already own just gets an ok again. That makes retries after 
 
 ## why it feels instant
 
-Your click paints the cell right away, before the server even answers. If the server says no, the cell shakes and goes back. The ack carries the version number so the cell can settle immediately instead of flashing while waiting for the broadcast.
+Your click paints the cell right away, before the server even answers. If the server says no, the cell shakes and goes back. The ack carries the version number so the cell can settle immediately instead of flashing while waiting for the broadcast. A little +1 floats off the cell when it's confirmed.
 
 ## storage
 
@@ -76,13 +82,17 @@ A public reset button on a shared board is just griefing, so there isn't one. Bo
 
 ## rate limit
 
-1 claim per second with a burst of 3, per user (GCRA, about 25 lines). Too fast gets a nack with the wait time and the UI shows a small ring. I've shipped this same algorithm in a webhook delivery pipeline before, it's my favorite tiny limiter.
+1 claim per second with a burst of 3, per user (GCRA, about 25 lines). Too fast gets a nack with the wait time, a draining ring on the cell you clicked, and a one-time toast telling new players the limit. I've shipped this same algorithm in a webhook delivery pipeline before, it's my favorite tiny limiter.
 
-The hammer script is the proof: 40 users clicking 4x over the limit. On my machine acks come back in about 1ms, other clients see a claim in about 60ms, and at the end the acks, the snapshot, memory and sqlite all agree exactly.
+The hammer script is the proof: 40 users clicking 4x over the limit. On my machine:
+
+- claim to ack: ~1ms
+- claim to another client seeing it: ~60ms (p95 64ms)
+- at the end, acks == snapshot == memory == sqlite, exactly
 
 ## the look
 
-rough.js rectangles on one big svg, each cell drawn with a fixed seed so it never wiggles between redraws. Excalifont for the text (open license, bundled in the repo). Colors are 12 fixed pastels picked by hashing the user id, never random.
+rough.js rectangles on one big svg, each cell drawn with a fixed seed so it never wiggles between redraws. Excalifont for the text (open license, bundled in the repo). Colors are 12 fixed pastels picked by hashing the user id, never random. Hover a claimed cell to see whose it is.
 
 ## choices i made
 
