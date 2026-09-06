@@ -48,7 +48,7 @@ export function TopBar() {
               )}
             </span>
             {draft === null ? (
-              <button className="name" title="click to rename" onClick={() => setDraft(s.me!.name)}>
+              <button className="name" onClick={() => setDraft(s.me!.name)}>
                 {s.me.name}
               </button>
             ) : (

@@ -100,6 +100,29 @@ body {
   border-bottom-color: var(--ink);
 }
 
+.name {
+  position: relative;
+}
+
+.name:hover::after {
+  content: "click to rename";
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) rotate(-0.5deg);
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-family: var(--hand);
+  color: var(--ink);
+  white-space: nowrap;
+  box-shadow: 2px 2px 0 rgba(74, 74, 69, 0.12);
+  pointer-events: none;
+  z-index: 10;
+}
+
 .name-edit {
   font-family: var(--hand);
   font-size: 17px;
