@@ -211,6 +211,16 @@ body {
 
 .boardwrap {
   overflow-x: auto;
+  position: relative;
+}
+
+.cell-tip {
+  transform: translate(-50%, -115%) rotate(-0.5deg);
+}
+
+.cell-tip b {
+  font-weight: normal;
+  color: var(--faint);
 }
 
 .board {
