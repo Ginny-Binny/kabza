@@ -353,13 +353,85 @@ body {
 }
 
 .overlay-card {
-  background: #fff;
+  position: relative;
+  background: #fffdf7;
   border: 2px solid var(--ink);
-  border-radius: 6px;
+  /* uneven radii so the box looks drawn, not drafted */
+  border-radius: 18px 7px 22px 9px / 9px 24px 7px 20px;
   padding: 18px 40px 22px;
   text-align: center;
   transform: rotate(-0.7deg);
-  box-shadow: 4px 4px 0 rgba(74, 74, 69, 0.15);
+  box-shadow: 4px 5px 0 rgba(74, 74, 69, 0.12);
+}
+
+.overlay-card::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 9px 24px 8px 26px / 22px 9px 26px 8px;
+  transform: rotate(0.5deg);
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.overlay.welcome {
+  background: rgba(250, 249, 246, 0.55);
+}
+
+.howto {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 14px;
+  text-align: left;
+}
+
+.howto li {
+  margin: 5px 0;
+}
+
+.howto li::before {
+  content: "→ ";
+  color: var(--faint);
+}
+
+.join {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.join input {
+  font-family: var(--hand);
+  font-size: 17px;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px 3px 9px 4px / 4px 10px 3px 9px;
+  padding: 5px 10px;
+  width: 13ch;
+}
+
+.join button {
+  font-family: var(--hand);
+  font-size: 17px;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-radius: 4px 10px 5px 9px / 9px 4px 10px 5px;
+  padding: 5px 14px;
+  cursor: url("/pencil.svg") 3 3, pointer;
+  transform: rotate(0.6deg);
+}
+
+.join button:hover {
+  transform: rotate(0.6deg) scale(1.04);
+}
+
+.fineprint {
+  color: var(--faint);
+  font-size: 13px;
+  margin: 10px 0 0;
 }
 
 .overlay-card h2 {
