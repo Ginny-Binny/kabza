@@ -19,7 +19,8 @@ jobs:
           HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          # key is stored base64ed so clipboard/newline mangling can't corrupt it
+          printf '%s' "$KEY" | tr -d ' \t\r\n' | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           printf '%s %s\n' "${HOST#*@}" "$HOST_KEY" > ~/.ssh/known_hosts
           # the server forces this key to run deploy-kabza.sh, the command here is ignored
