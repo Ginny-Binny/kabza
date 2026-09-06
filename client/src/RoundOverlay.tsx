@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+import { getState, subscribe } from "./store";
 import type { Overlay } from "./store";
 
 export function RoundOverlay({ overlay }: { overlay: Overlay }) {
   const [left, setLeft] = useState(() => Math.ceil((overlay.endsAt - Date.now()) / 1000));
+  const me = useSyncExternalStore(subscribe, getState).me;
+  const iWon = overlay.winner != null && overlay.winner.id === me?.id;
 
   useEffect(() => {
     const iv = setInterval(() => setLeft(Math.max(0, Math.ceil((overlay.endsAt - Date.now()) / 1000))), 250);
@@ -12,11 +16,17 @@ export function RoundOverlay({ overlay }: { overlay: Overlay }) {
   return (
     <div className="overlay">
       <div className="overlay-card">
-        <h2>board full!</h2>
-        {overlay.winner && (
+        <h2>{iWon ? "you took the round!" : "board full!"}</h2>
+        {overlay.winner && !iWon && (
           <p className="winner">
             <span className="chip" style={{ background: overlay.winner.color }} /> {overlay.winner.name} takes the
             round with {overlay.winner.cellCount} cells
+          </p>
+        )}
+        {iWon && overlay.winner && (
+          <p className="winner">
+            <span className="chip" style={{ background: overlay.winner.color }} /> {overlay.winner.cellCount} cells,
+            all yours
           </p>
         )}
         <ol>
